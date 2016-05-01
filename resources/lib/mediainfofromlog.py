@@ -18,6 +18,7 @@
 #
 import xbmc
 import json
+import os.path
 
 def get_log_mediainfo():
     """
@@ -39,6 +40,8 @@ def get_log_mediainfo():
         logfn = xbmc.translatePath(r'special://logpath/xbmc.log')
     else:
         logfn = xbmc.translatePath(r'special://logpath/kodi.log')
+    if os.path.exists(logfn) == False:
+        logfn = xbmc.translatePath(r'special://logpath/spmc.log')
     if is_xbmc_debug():
         lookbacksize = 6144
         lookbacklines = 60
