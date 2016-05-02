@@ -578,12 +578,7 @@ def run():
 
   #logger.debuglog("starting run loop!")
   while not monitor.abortRequested():
-    #logger.debuglog("in run loop!")
-    if hue.settings.mode == 1: # theater mode
-      if monitor.waitForAbort(0.5):
-        #kodi requested an abort, lets get out of here.
-        break
-    elif hue.settings.mode == 0: # ambilight mode
+    if hue.settings.mode == 0: # ambilight mode
       # no longer needed here. (especially in a run-loop!!!) instantiating a Group object causes a TON of requests to go to the bridge, which will back up and MASSIVELY deteriorate performance.
       # if hue.settings.ambilight_dim:
       #  and hue.dim_group == None:
@@ -602,9 +597,6 @@ def run():
       #probably doesnt need to be called @ 60fps, i understand the intention, but TV & Movies is in the 24-30fps range.
       if player.framerate != 0: #gotta have a framerate
         try:
-          if monitor.waitForAbort(0.1): #rate limit to 10/sec or less
-            logger.debuglog("abort requested in ambilight loop") #kodi requested an abort, lets get out of here.
-            break
           if capture.waitForCaptureStateChangeEvent(int(round(1000/player.framerate))):
             #we've got a capture event
             if capture.getCaptureState() == xbmc.CAPTURE_STATE_DONE:
@@ -622,11 +614,11 @@ def run():
                     #xbmc.sleep(4) #why?
                     fade_light_hsv(hue.light[2], hsvRatios[2])
         except ZeroDivisionError:
-          logger.debuglog("no framerate. waiting.")
-      else:
-        if monitor.waitForAbort(0.1):
-          #kodi requested an abort, lets get out of here.
-          break
+          logger.debuglog("no framerate. looping.")
+          
+    if monitor.waitForAbort(1):
+      #kodi requested an abort, lets get out of here.
+      break
   del player #might help with slow exit.
 
 def fade_light_hsv(light, hsvRatio):
