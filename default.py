@@ -85,7 +85,7 @@ class MyPlayer(xbmc.Player):
 
   def onPlayBackStarted(self):
     xbmc.log("Kodi Hue: DEBUG playback started called on player")
-    if self.isPlayingVideo():
+    if self.isPlayingVideo() and not self.playingvideo:
       self.playingvideo = True
       self.duration = self.getTotalTime()
       self.movie = xbmc.getCondVisibility('VideoPlayer.Content(movies)')
@@ -127,14 +127,6 @@ class MyPlayer(xbmc.Player):
     if self.movie and not self.timer is None:
       self.timer.stop()
     state_changed("stopped", self.duration)
-
-  def onPlayBackEnded(self):
-    xbmc.log("Kodi Hue: DEBUG playback ended called on player")
-    if self.playingvideo:
-      self.playingvideo = False
-      if self.movie and not self.timer is None:
-        self.timer.stop()
-      state_changed("stopped", self.duration)
 
 class Hue:
   params = None
