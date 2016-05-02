@@ -358,17 +358,10 @@ class Hue:
   def update_settings(self):
     self.logger.debuglog("class Hue: update settings")
     self.logger.debuglog(settings)
-    if self.settings.light == 0 and \
-        (self.light is None or type(self.light) != Group):
+    if self.settings.light == 0:
       self.logger.debuglog("creating Group instance")
       self.light = Group(self.settings)
-    elif self.settings.light > 0 and \
-          (self.light is None or \
-          type(self.light) == Group or \
-          len(self.light) != self.settings.light or \
-          self.light[0].light != self.settings.light1_id or \
-          (self.settings.light > 1 and self.light[1].light != self.settings.light2_id) or \
-          (self.settings.light > 2 and self.light[2].light != self.settings.light3_id)):
+    elif self.settings.light > 0:
       self.logger.debuglog("creating Light instances")
       self.light = [None] * self.settings.light
       self.light[0] = Light(self.settings.light1_id, self.settings)
@@ -380,17 +373,10 @@ class Hue:
         self.light[2] = Light(self.settings.light3_id, self.settings)
     #ambilight dim
     if self.settings.ambilight_dim:
-      if self.settings.ambilight_dim_light == 0 and \
-          (self.ambilight_dim_light is None or type(self.ambilight_dim_light) != Group):
+      if self.settings.ambilight_dim_light == 0:
         self.logger.debuglog("creating Group instance for ambilight dim")
         self.ambilight_dim_light = Group(self.settings, self.settings.ambilight_dim_group_id)
-      elif self.settings.ambilight_dim_light > 0 and \
-            (self.ambilight_dim_light is None or \
-            type(self.ambilight_dim_light) == Group or \
-            len(self.ambilight_dim_light) != self.settings.ambilight_dim_light or \
-            self.ambilight_dim_light[0].light != self.settings.ambilight_dim_light1_id or \
-            (self.settings.ambilight_dim_light > 1 and self.ambilight_dim_light[1].light != self.settings.ambilight_dim_light2_id) or \
-            (self.settings.ambilight_dim_light > 2 and self.ambilight_dim_light[2].light != self.settings.ambilight_dim_light3_id)):
+      elif self.settings.ambilight_dim_light > 0:
         self.logger.debuglog("creating Light instances for ambilight dim")
         self.ambilight_dim_light = [None] * self.settings.ambilight_dim_light
         self.ambilight_dim_light[0] = Light(self.settings.ambilight_dim_light1_id, self.settings)
