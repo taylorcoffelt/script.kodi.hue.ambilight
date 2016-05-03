@@ -1,7 +1,6 @@
 import xbmc
 import xbmcgui
 import xbmcaddon
-import json
 import time
 import sys
 import colorsys
@@ -12,6 +11,7 @@ from threading import Timer
 
 __addon__      = xbmcaddon.Addon()
 __addondir__   = xbmc.translatePath( __addon__.getAddonInfo('profile') ) 
+__addonversion__ = __addon__.getAddonInfo('version')
 __cwd__        = __addon__.getAddonInfo('path')
 __resource__   = xbmc.translatePath( os.path.join( __cwd__, 'resources', 'lib' ) )
 
@@ -19,7 +19,7 @@ sys.path.append (__resource__)
 
 from settings import *
 from tools import *
-from mediainfofromlog import *
+from hue import *
 
 try:
   import requests
@@ -27,7 +27,7 @@ except ImportError:
   xbmc.log("ERROR: Could not locate required library requests")
   notify("Kodi Hue", "ERROR: Could not import Python requests")
 
-xbmc.log("Kodi Hue service started, version: %s" % get_version())
+xbmc.log("Kodi Hue service started, version: %s" % __addonversion__)
 
 capture = xbmc.RenderCapture()
 fmt = capture.getImageFormat()
@@ -128,264 +128,6 @@ class MyPlayer(xbmc.Player):
       self.timer.stop()
     state_changed("stopped", self.duration)
 
-class Hue:
-  params = None
-  connected = None
-  last_state = None
-  light = None
-  ambilight_dim_light = None
-  pauseafterrefreshchange = 0
-
-  def __init__(self, settings, args):
-    #Logs are good, mkay.
-    self.logger = Logger()
-    if settings.debug:
-      self.logger.debug()
-
-    #get settings
-    self.settings = settings
-    self._parse_argv(args)
-
-    #if there's a bridge user, lets instantiate the lights (only if we're connected).
-    if self.settings.bridge_user not in ["-", "", None] and self.connected:
-      self.update_settings()
-
-    if self.params == {}:
-      self.logger.debuglog("params: %s" % self.params)
-      #if there's a bridge IP, try to talk to it.
-      if self.settings.bridge_ip not in ["-", "", None]:
-        result = self.test_connection()
-        if result:
-          self.update_settings()
-    elif self.params['action'] == "discover":
-      self.logger.debuglog("Starting discovery")
-      notify("Bridge Discovery", "starting")
-      hue_ip = self.start_autodiscover()
-      if hue_ip != None:
-        notify("Bridge Discovery", "Found bridge at: %s" % hue_ip)
-        username = self.register_user(hue_ip)
-        self.logger.debuglog("Updating settings")
-        self.settings.update(bridge_ip = hue_ip)
-        self.settings.update(bridge_user = username)
-        notify("Bridge Discovery", "Finished")
-        self.test_connection()
-        self.update_settings()
-      else:
-        notify("Bridge Discovery", "Failed. Could not find bridge.")
-    elif self.params['action'] == "reset_settings":
-      self.logger.debuglog("Reset Settings to default.")
-      self.logger.debuglog(__addondir__)
-      os.unlink(os.path.join(__addondir__,"settings.xml"))
-      #self.settings.readxml()
-      #xbmcgui.Window(10000).clearProperty("script.kodi.hue.ambilight" + '_running')
-      #__addon__.openSettings()
-    else:
-      # not yet implemented
-      self.logger.debuglog("unimplemented action call: %s" % self.params['action'])
-
-    #detect pause for refresh change (must reboot for this to take effect.)
-    response = json.loads(xbmc.executeJSONRPC('{"jsonrpc":"2.0","method":"Settings.GetSettingValue", "params":{"setting":"videoplayer.pauseafterrefreshchange"},"id":1}'))
-    #logger.debuglog(isinstance(response, dict))
-    if "result" in response and "value" in response["result"]:
-      pauseafterrefreshchange = int(response["result"]["value"])
-
-    if self.connected:
-      if self.settings.misc_initialflash:
-        self.flash_lights()
-
-  def start_autodiscover(self):
-    port = 1900
-    ip = "239.255.255.250"
-
-    address = (ip, port)
-    data = """M-SEARCH * HTTP/1.1
-    HOST: %s:%s
-    MAN: ssdp:discover
-    MX: 3
-    ST: upnp:rootdevice
-    """ % (ip, port)
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) #force udp
-    client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    client_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-
-    hue_ip = None
-    num_retransmits = 0
-    while(num_retransmits < 10) and hue_ip == None:
-      num_retransmits += 1
-      try:
-        client_socket.sendto(data, address)
-        recv_data, addr = client_socket.recvfrom(2048)
-        self.logger.debuglog("received data during autodiscovery: "+recv_data)
-        if "IpBridge" in recv_data and "description.xml" in recv_data:
-          hue_ip = recv_data.split("LOCATION: http://")[1].split(":")[0]
-        time.sleep(1)
-      except socket.timeout:
-        break #if the socket times out once, its probably not going to complete at all. fallback to nupnp.
-
-    if hue_ip == None:
-      #still nothing found, try alternate api
-      r=requests.get("https://www.meethue.com/api/nupnp", verify=False) #verify false hack until meethue fixes their ssl cert.
-      j=r.json()
-      if len(j) > 0:
-        hue_ip=j[0]["internalipaddress"]
-        self.logger.debuglog("meethue nupnp api returned: "+hue_ip)
-      else:
-        self.logger.debuglog("meethue nupnp api did not find bridge")
-        
-    return hue_ip
-
-  def register_user(self, hue_ip):
-    #username = hashlib.md5(str(random.random())).hexdigest() #not needed with new strategy
-    device = "kodi-hue-addon"
-    data = '{"devicetype": "%s#%s"}' % (device, xbmc.getInfoLabel('System.FriendlyName')[0:19])
-    self.logger.debuglog("sending data: %s" % data)
-
-    r = requests.post('http://%s/api' % hue_ip, data=data)
-    response = r.text
-    while "link button not pressed" in response:
-      self.logger.debuglog("register user response: %s" % r)
-      notify("Bridge Discovery", "Press link button on bridge")
-      r = requests.post('http://%s/api' % hue_ip, data=data)
-      response = r.text 
-      time.sleep(3)
-
-    j = r.json()
-    self.logger.debuglog("got a username response: %s" % j)
-    username = j[0]["success"]["username"]
-
-    return username
-
-  def flash_lights(self):
-    self.logger.debuglog("class Hue: flashing lights")
-    if self.settings.light == 0:
-      self.light.flash_light()
-    else:
-      self.light[0].flash_light()
-      if self.settings.light > 1:
-        xbmc.sleep(1)
-        self.light[1].flash_light()
-      if self.settings.light > 2:
-        xbmc.sleep(1)
-        self.light[2].flash_light()
-    
-  def _parse_argv(self, args):
-    try:
-        self.params = dict(arg.split("=") for arg in args.split("&"))
-    except:
-        self.params = {}
-
-  def test_connection(self):
-    self.logger.debuglog("testing connection")
-    r = requests.get('http://%s/api/%s/config' % \
-      (self.settings.bridge_ip, self.settings.bridge_user))
-    test_connection = r.text.find("name")
-    if not test_connection:
-      notify("Failed", "Could not connect to bridge")
-      self.connected = False
-    else:
-      notify("Kodi Hue", "Connected")
-      self.connected = True
-    return self.connected
-
-  # #unifed light action method. will replace dim_lights, brighter_lights, partial_lights
-  # def light_actions(self, action, lights=None):
-  #   if lights == None:
-  #     #default for method
-  #     lights = self.light
-
-  #   self.last_state = action
-
-  #   if isinstance(lights, list):
-  #     #array of lights
-  #     for l in lights:
-  #       if action == "dim":
-  #         l.dim_light()
-  #       elif action == "undim":
-  #         l.brighter_light()
-  #       elif action == "partial":
-  #         l.partial_light()
-  #   else:
-  #     #group
-  #     if action == "dim":
-  #       lights.dim_light()
-  #     elif action == "undim":
-  #       lights.brighter_light()
-  #     elif action == "partial":
-  #       lights.partial_light()
-
-  def dim_lights(self):
-    self.logger.debuglog("class Hue: dim lights")
-    self.last_state = "dimmed"
-    if self.settings.light == 0:
-      self.light.dim_light()
-    else:
-      self.light[0].dim_light()
-      if self.settings.light > 1:
-        xbmc.sleep(1)
-        self.light[1].dim_light()
-      if self.settings.light > 2:
-        xbmc.sleep(1)
-        self.light[2].dim_light()
-        
-  def brighter_lights(self):
-    self.logger.debuglog("class Hue: brighter lights")
-    self.last_state = "brighter"
-    if self.settings.light == 0:
-      self.light.brighter_light()
-    else:
-      self.light[0].brighter_light()
-      if self.settings.light > 1:
-        xbmc.sleep(1)
-        self.light[1].brighter_light()
-      if self.settings.light > 2:
-        xbmc.sleep(1)
-        self.light[2].brighter_light()
-
-  def partial_lights(self):
-    self.logger.debuglog("class Hue: partial lights")
-    self.last_state = "partial"
-    if self.settings.light == 0:
-      self.light.partial_light()
-    else:
-      self.light[0].partial_light()
-      if self.settings.light > 1:
-        xbmc.sleep(1)
-        self.light[1].partial_light()
-      if self.settings.light > 2:
-        xbmc.sleep(1)
-        self.light[2].partial_light()
-
-  def update_settings(self):
-    self.logger.debuglog("class Hue: update settings")
-    self.logger.debuglog(settings)
-    if self.settings.light == 0:
-      self.logger.debuglog("creating Group instance")
-      self.light = Group(self.settings)
-    elif self.settings.light > 0:
-      self.logger.debuglog("creating Light instances")
-      self.light = [None] * self.settings.light
-      self.light[0] = Light(self.settings.light1_id, self.settings)
-      if self.settings.light > 1:
-        xbmc.sleep(1)
-        self.light[1] = Light(self.settings.light2_id, self.settings)
-      if self.settings.light > 2:
-        xbmc.sleep(1)
-        self.light[2] = Light(self.settings.light3_id, self.settings)
-    #ambilight dim
-    if self.settings.ambilight_dim:
-      if self.settings.ambilight_dim_light == 0:
-        self.logger.debuglog("creating Group instance for ambilight dim")
-        self.ambilight_dim_light = Group(self.settings, self.settings.ambilight_dim_group_id)
-      elif self.settings.ambilight_dim_light > 0:
-        self.logger.debuglog("creating Light instances for ambilight dim")
-        self.ambilight_dim_light = [None] * self.settings.ambilight_dim_light
-        self.ambilight_dim_light[0] = Light(self.settings.ambilight_dim_light1_id, self.settings)
-        if self.settings.ambilight_dim_light > 1:
-          xbmc.sleep(1)
-          self.ambilight_dim_light[1] = Light(self.settings.ambilight_dim_light2_id, self.settings)
-        if self.settings.ambilight_dim_light > 2:
-          xbmc.sleep(1)
-          self.ambilight_dim_light[2] = Light(self.settings.ambilight_dim_light3_id, self.settings)
 
 class HSVRatio:
   cyan_min = float(4.5/12.0)
@@ -543,6 +285,9 @@ def run():
   if player == None:
     logger.log("Cannot instantiate player. Bailing out")
     return
+    
+  monitor = MyMonitor()
+
   last = time.time()
 
   #logger.debuglog("starting run loop!")
@@ -572,10 +317,12 @@ def run():
         except ZeroDivisionError:
           logger.debuglog("no frame. looping.")
           
-    if monitor.waitForAbort(1):
+    if monitor.waitForAbort(0.1):
       #kodi requested an abort, lets get out of here.
       break
-  del player #might help with slow exit.
+      
+  del player
+  del monitor
 
 def fade_light_hsv(light, hsvRatio):
   fullSpectrum = light.fullSpectrum
@@ -692,12 +439,11 @@ def state_changed(state, duration):
       hue.brighter_lights()
 
 if ( __name__ == "__main__" ):
-  settings = settings()
   logger = Logger()
-  monitor = MyMonitor()
+  settings = MySettings()
   if settings.debug == True:
     logger.debug()
-  
+ 
   args = None
   if len(sys.argv) == 2:
     args = sys.argv[1]
@@ -706,3 +452,7 @@ if ( __name__ == "__main__" ):
     logger.debuglog("not connected")
     time.sleep(1)
   run()
+  
+  del logger
+  del settings
+

@@ -3,7 +3,7 @@ import xbmcaddon
 
 __addon__      = sys.modules[ "__main__" ].__addon__
 
-class settings():
+class MySettings():
   def __init__( self, *args, **kwargs ):
     self.readxml()
     self.addon = xbmcaddon.Addon()
