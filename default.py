@@ -306,7 +306,11 @@ def run():
 
   #logger.debuglog("starting run loop!")
   while not monitor.abortRequested():
+
+    waitTimeout = 1;
+
     if hue.settings.mode == 0: # ambilight mode
+      waitTimeout = 0.1
       now = time.time()
       #logger.debuglog("run loop delta: %f (%f/sec)" % ((now-last), 1/(now-last)))
       last = now
@@ -330,9 +334,8 @@ def run():
                   fade_light_hsv(hue.light[2], hsvRatios[2])
         except ZeroDivisionError:
           logger.debuglog("no frame. looping.")
-          
-    if monitor.waitForAbort(0.1):
-      #kodi requested an abort, lets get out of here.
+
+    if monitor.waitForAbort(waitTimeout):
       break
       
   del player
