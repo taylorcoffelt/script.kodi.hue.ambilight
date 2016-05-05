@@ -6,6 +6,11 @@ import logging
 
 from tools import *
 
+try:
+  import requests
+except ImportError:
+  notify("Kodi Hue", "ERROR: Could not import Python requests")
+
 class Hue:
   params = None
   connected = None
