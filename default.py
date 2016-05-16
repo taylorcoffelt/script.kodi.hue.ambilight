@@ -302,7 +302,7 @@ def run():
     
   monitor = MyMonitor()
 
-  last = time.time()
+  last = 0
 
   #logger.debuglog("starting run loop!")
   while not monitor.abortRequested():
@@ -312,7 +312,7 @@ def run():
     if hue.settings.mode == 0: # ambilight mode
       waitTimeout = 0.1
       now = time.time()
-      #logger.debuglog("run loop delta: %f (%f/sec)" % ((now-last), 1/(now-last)))
+      logger.debuglog("run loop delta: %f (%f/sec)" % ((now-last), 1/(now-last)))
       last = now
 
       if player.playingvideo: # only if there's actually video
@@ -432,9 +432,7 @@ def state_changed(state, duration):
       elif hue.settings.ambilight_dim_light > 0:
         for l in hue.ambilight_dim_light:
           l.dim_light()
-    else:
-      logger.debuglog("dimming lights")
-      hue.dim_lights()
+    hue.dim_lights()
   elif state == "paused" and hue.last_state == "dimmed":
     #only if its coming from being off
     if hue.settings.mode == 0 and hue.settings.ambilight_dim:
@@ -443,8 +441,7 @@ def state_changed(state, duration):
       elif hue.settings.ambilight_dim_light > 0:
         for l in hue.ambilight_dim_light:
           l.partial_light()
-    else:
-      hue.partial_lights()
+    hue.partial_lights()
   elif state == "stopped":
     if hue.settings.mode == 0 and hue.settings.ambilight_dim:
       if hue.settings.ambilight_dim_light == 0:
@@ -452,8 +449,7 @@ def state_changed(state, duration):
       elif hue.settings.ambilight_dim_light > 0:
         for l in hue.ambilight_dim_light:
           l.brighter_light()
-    else:
-      hue.brighter_lights()
+    hue.brighter_lights()
 
 if ( __name__ == "__main__" ):
   logger = Logger()
