@@ -20,11 +20,6 @@ def notify(title, msg=""):
     global __icon__
     xbmc.executebuiltin("XBMC.Notification(%s, %s, 3, %s)" % (title, msg, __icon__))
 
-try:
-  import requests
-except ImportError:
-  notify("Kodi Hue", "ERROR: Could not import Python requests")
-
 ######################
 # BEGIN CREDITS CODE #
 ######################
